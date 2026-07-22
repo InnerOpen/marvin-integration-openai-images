@@ -47,9 +47,12 @@ def test_check_logic():
 
 
 def test_generate_returns_canonical_output():
-    http = _StubHttp()
+    http = _StubHttp(payload={"data": [{"b64_json": _FAKE_B64}], "usage": {"input_tokens": 10, "output_tokens": 100}})
     out = OpenAIImagesProvider().run_action("generate", {"prompt": "a rustic workshop", "count": 1}, _ctx(http=http))
-    assert out == {"images": [{"image_b64": _FAKE_B64}]}
+    assert out["images"] == [{"image_b64": _FAKE_B64}]
+    # usage surfaced for core cost logging
+    assert out["usage"]["provider_type"] == "openai"
+    assert out["usage"]["input_tokens"] == 10 and out["usage"]["output_tokens"] == 100
     # canonical inputs → OpenAI request shape; generous timeout for slow generation
     assert http.last["json"]["prompt"] == "a rustic workshop"
     assert http.last["json"]["n"] == 1
@@ -60,7 +63,7 @@ def test_generate_returns_canonical_output():
 def test_generate_passes_through_url_form():
     http = _StubHttp(payload={"data": [{"url": "https://img.example/1.png"}]})
     out = OpenAIImagesProvider().run_action("generate", {"prompt": "x"}, _ctx(http=http))
-    assert out == {"images": [{"url": "https://img.example/1.png"}]}
+    assert out["images"] == [{"url": "https://img.example/1.png"}]
 
 
 def test_generate_requires_prompt():

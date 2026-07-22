@@ -82,10 +82,9 @@ class OpenAIImagesProvider(IntegrationProvider):
 
         cfg = ctx.config or {}
         model = cfg.get("model") or "gpt-image-1"
+        # No response_format: newer image endpoints reject it. gpt-image-1 returns b64_json;
+        # dall-e-* return a URL. run_action normalizes both below.
         body = {"model": model, "prompt": prompt, "n": int((args or {}).get("count") or 1), "size": cfg.get("size") or "1024x1024"}
-        # dall-e-* return a URL unless asked for b64; gpt-image-1 returns b64 by default.
-        if model.startswith("dall-e"):
-            body["response_format"] = "b64_json"
 
         try:
             resp = ctx.http.post(_ENDPOINT, json=body, headers={"Authorization": f"Bearer {ctx.secret}"}, timeout=_TIMEOUT)
@@ -96,10 +95,23 @@ class OpenAIImagesProvider(IntegrationProvider):
         if not resp.ok:
             raise ValueError(f"OpenAI images returned HTTP {resp.status_code}: {resp.text[:200]}")
 
+        payload = resp.json()
         images: list[dict] = []
-        for item in resp.json().get("data", []):
+        for item in payload.get("data", []):
             if item.get("b64_json"):
                 images.append({"image_b64": item["b64_json"]})
             elif item.get("url"):
                 images.append({"url": item["url"]})
-        return {"images": images}
+
+        # Surface usage so the core can log cost against the monthly AI spend (data only — the
+        # provider stays DB-free). The images API returns token usage for gpt-image-* models.
+        result: dict = {"images": images}
+        u = payload.get("usage") or {}
+        result["usage"] = {
+            "provider_type": "openai",
+            "model": model,
+            "input_tokens": u.get("input_tokens", 0),
+            "output_tokens": u.get("output_tokens", 0),
+            "total_tokens": u.get("total_tokens", (u.get("input_tokens", 0) + u.get("output_tokens", 0))),
+        }
+        return result
