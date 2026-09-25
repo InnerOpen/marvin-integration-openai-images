@@ -21,6 +21,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/marvin_integration_openai_images"]
 
+# Dev only: resolve the SDK from the sibling checkout. Released builds take it from the index.
+[tool.uv.sources]
+marvin-integration-sdk = { path = "../MarvinIntegrationSDK", editable = true }
+
 [tool.ruff]
 line-length = 150
 target-version = "py311"

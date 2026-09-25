@@ -4,8 +4,8 @@ import base64
 import logging
 
 import pytest
-
 from marvin_integration_sdk import IntegrationContext, Response
+
 from marvin_integration_openai_images import OpenAIImagesProvider
 
 _LOG = logging.getLogger("test")

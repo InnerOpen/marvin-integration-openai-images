@@ -6,6 +6,8 @@ Pure with respect to Marvin — it gets the API key + config + http, and returns
 resolver persists them.
 """
 
+from typing import ClassVar
+
 from marvin_integration_sdk import (
     CATEGORY_CAPABILITY,
     CredentialField,
@@ -31,7 +33,7 @@ class OpenAIImagesProvider(IntegrationProvider):
     credentials = (
         CredentialField(key="api_key", label="OpenAI API Key", help="An OpenAI API key (sk-…) with image access."),
     )
-    config_schema = {
+    config_schema: ClassVar[dict] = {
         "type": "object",
         "properties": {
             "model": {"type": "string", "title": "Model", "default": "gpt-image-1"},
@@ -89,7 +91,7 @@ class OpenAIImagesProvider(IntegrationProvider):
 
         try:
             resp = ctx.http.post(_ENDPOINT, json=body, headers={"Authorization": f"Bearer {ctx.secret}"}, timeout=_TIMEOUT)
-        except Exception as e:  # noqa: BLE001 — surface transport/guard failures cleanly
+        except Exception as e:  # surface transport/guard failures cleanly
             ctx.logger.warning(f"[openai_images] request failed: {e}")
             raise ValueError(f"OpenAI images request failed: {e}") from e
 
