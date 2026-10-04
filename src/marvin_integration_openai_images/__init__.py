@@ -3,4 +3,4 @@
 from .provider import OpenAIImagesProvider
 
 __all__ = ["OpenAIImagesProvider"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

@@ -29,6 +29,7 @@ class OpenAIImagesProvider(IntegrationProvider):
     description = "Generate images from a text prompt via the OpenAI image API."
     category = CATEGORY_CAPABILITY
     icon = "🎨"
+    logo = "logo.svg"
 
     credentials = (
         CredentialField(key="api_key", label="OpenAI API Key", help="An OpenAI API key (sk-…) with image access."),

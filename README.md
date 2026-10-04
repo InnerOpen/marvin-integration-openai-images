@@ -27,6 +27,10 @@ resolves to it automatically.
 Generation is slow, so the provider sets a generous 120s HTTP timeout; the resolver caps
 wall-clock on its side.
 
+## Logo
+
+`logo.svg` is the black OpenAI Blossom, unmodified, from OpenAI's logo pack at [openai.com/brand](https://openai.com/brand/). OpenAI's terms: show it only where it relates to OpenAI services, exactly as provided (no added colours, so on a light background), never more prominent than Marvin's own branding and never implying endorsement.
+
 ## Develop
 
 ```bash

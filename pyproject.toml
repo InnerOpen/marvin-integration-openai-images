@@ -1,10 +1,10 @@
 [project]
 name = "marvin-integration-openai-images"
-version = "0.1.0"
+version = "0.2.0"
 description = "OpenAI image generation for Marvin — advertises the image.generate capability."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["marvin-integration-sdk>=0.1,<1"]
+dependencies = ["marvin-integration-sdk>=0.6,<1"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.11"]
