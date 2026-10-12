@@ -1,8 +1,9 @@
 # marvin-integration-openai-images
 
 A **capability** integration for [Marvin](https://claude.ai/code): generate images from a text
-prompt via the OpenAI image API. Advertises the `image.generate` capability, so Marvin's
-media-enrichment resolver can discover and invoke it uniformly.
+prompt, or edit a picture (remove its background, set it in a new scene, make a variant), via the
+OpenAI image API. Advertises the `image.generate` and `image.edit` capabilities, so Marvin's
+workflows and media resolver can discover and invoke it uniformly.
 
 ## Install
 
@@ -18,11 +19,12 @@ resolves to it automatically.
 
 | | |
 |---|---|
-| **Capability** | `image.generate` |
+| **Capabilities** | `image.generate` (`generate`), `image.edit` (`edit`) |
 | **Credential** | `api_key` — an OpenAI API key |
 | **Config** | `model` (default `gpt-image-1`), `size` (default `1024x1024`) |
-| **Invoke** | in `{prompt, count?}` → out `{images: [{image_b64 \| url}]}` |
-| **Cost / approval** | `cost_hint="paid"`, `requires_approval=True` |
+| **generate** | in `{prompt, count?}` → out `{images: [{image_b64 \| url}]}` |
+| **edit** | in `{prompt, image_b64, image_mime?, background? auto\|transparent\|opaque, fidelity? high\|low}` → out `{image_b64}`; the picture goes to `/v1/images/edits` as a file, with `input_fidelity` (default high) so its details stay; a transparent background comes back as PNG. In a Marvin workflow, the integration step's `source` fills `image_b64`, and the result is kept as a version of that picture. |
+| **Cost / approval** | both `cost_hint="paid"`, `requires_approval=True` |
 
 Generation is slow, so the provider sets a generous 120s HTTP timeout; the resolver caps
 wall-clock on its side.

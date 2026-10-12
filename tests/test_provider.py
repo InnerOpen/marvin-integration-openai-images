@@ -24,7 +24,7 @@ class _StubHttp:
     def post(self, url, *, json=None, data=None, headers=None, timeout=15):
         import json as _json
 
-        self.last = {"url": url, "json": json, "headers": headers, "timeout": timeout}
+        self.last = {"url": url, "json": json, "data": data, "headers": headers, "timeout": timeout}
         return Response(status_code=self.status, content=_json.dumps(self.payload).encode())
 
 
@@ -75,3 +75,45 @@ def test_http_error_surfaces():
     http = _StubHttp(status=401, payload={"error": {"message": "bad key"}})
     with pytest.raises(ValueError):
         OpenAIImagesProvider().run_action("generate", {"prompt": "x"}, _ctx(http=http))
+
+
+# ── edit ──────────────────────────────────────────────────────────────────────
+_PICTURE = b"\x89PNG-the-product-photo"
+
+
+def _edit(http, **args):
+    base = {"prompt": "Remove the background", "image_b64": base64.b64encode(_PICTURE).decode(), "image_mime": "image/png"}
+    return OpenAIImagesProvider().run_action("edit", {**base, **args}, _ctx(http=http))
+
+
+def test_edit_is_an_image_edit_capability_that_needs_approval():
+    action = next(a for a in OpenAIImagesProvider().actions if a.key == "edit")
+    assert action.capability == "image.edit" and action.requires_approval is True and action.cost_hint == "paid"
+    assert action.input_schema["required"] == ["prompt", "image_b64"]
+
+
+def test_edit_sends_the_picture_as_a_file_and_returns_one_image():
+    http = _StubHttp(payload={"data": [{"b64_json": _FAKE_B64}], "usage": {"input_tokens": 5, "output_tokens": 50}})
+
+    out = _edit(http, background="transparent")
+
+    assert out["image_b64"] == _FAKE_B64 and out["usage"]["output_tokens"] == 50
+    assert http.last["url"].endswith("/v1/images/edits") and http.last["json"] is None
+    content_type = http.last["headers"]["Content-Type"]
+    assert content_type.startswith("multipart/form-data; boundary=")
+    body = http.last["data"]
+    assert _PICTURE in body and b'name="image"; filename="image.png"' in body
+    for field, value in (
+        ("prompt", b"Remove the background"),
+        ("background", b"transparent"),
+        ("output_format", b"png"),
+        ("input_fidelity", b"high"),
+    ):
+        assert f'name="{field}"\r\n\r\n'.encode() + value in body, field
+
+
+def test_edit_without_a_picture_or_with_an_error_says_so():
+    with pytest.raises(ValueError, match="set the workflow step's source"):
+        _edit(_StubHttp(), image_b64="")
+    with pytest.raises(ValueError, match="HTTP 400"):
+        _edit(_StubHttp(status=400, payload={"error": {"message": "bad"}}))
