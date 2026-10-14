@@ -15,6 +15,19 @@ Then **Settings → Integrations → OpenAI Images → Configure**, paste an Ope
 optionally set `model` / `size`. Once configured, any enrichment step that needs `image.generate`
 resolves to it automatically.
 
+## Actions and settings
+
+| | |
+|---|---|
+| **Credential** | `api_key` — an OpenAI key with image access |
+| **Config** | `model` (`gpt-image-1`; use `gpt-image-2` for finals, `gpt-image-1-mini` for drafts), `size` (the picture's pixels: `1024x1024`, `1536x1024`, `1024x1536`, `auto`), `quality` (`auto`/`low`/`medium`/`high`), `output_format` (`png`/`jpeg`/`webp`) |
+| **Check connection** | real: the key is tried against OpenAI and the configured model must be one it can use |
+| **Action** | `generate` — `{ "prompt", "count": 1, "quality"?, "output_format"?, "background"? }` → `{ "images": [{ "image_b64" }], "usage" }` (paid, approval) |
+| **Action** | `edit` — `{ "prompt", "image_b64", "image_mime"?, "background"?, "fidelity"? }` → `{ "image_b64", "usage" }` (paid, approval) |
+| **Action** | `list_models` — `{}` → `{ "models", "configured", "available" }` (free; the plain connection test) |
+
+The guide (`guide.md`, SDK 0.9.0) tells Marvin's agents the models, the cost and how a workflow uses it.
+
 ## Capability
 
 | | |

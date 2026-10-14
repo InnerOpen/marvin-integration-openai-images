@@ -18,8 +18,21 @@ class _StubHttp:
         self.payload = payload if payload is not None else {"data": [{"b64_json": _FAKE_B64}]}
         self.last = None
 
-    def get(self, url, *, headers=None, timeout=15):  # pragma: no cover
-        raise AssertionError("no GET expected")
+    def get(self, url, *, headers=None, timeout=15):
+        import json as _json
+
+        self.last_get = {"url": url, "headers": headers}
+        if url.endswith("/v1/models"):
+            return Response(
+                status_code=200,
+                content=_json.dumps(
+                    {"data": [{"id": m} for m in ("gpt-4.1", "gpt-image-1", "gpt-image-1-mini", "gpt-image-2", "dall-e-3")]}
+                ).encode(),
+            )
+        model = url.rsplit("/", 1)[1]
+        if self.status == 401:
+            return Response(status_code=401, content=b'{"error":"bad key"}')
+        return Response(status_code=200 if model in ("gpt-image-1", "gpt-image-1-mini", "gpt-image-2", "dall-e-3") else 404, content=b"{}")
 
     def post(self, url, *, json=None, data=None, headers=None, timeout=15):
         import json as _json
@@ -39,11 +52,56 @@ def test_advertises_image_generate_capability():
     assert action.cost_hint == "paid"
 
 
-def test_check_logic():
+def test_check_tries_the_key_and_the_models_availability():
     p = OpenAIImagesProvider()
-    assert p.check(_ctx(secret="sk-abc")) == ("ok", None)
     assert p.check(_ctx(secret=None))[0] == "unconfigured"
     assert p.check(_ctx(secret="nope"))[0] == "error"
+    assert p.check(_ctx(config={"model": "gpt-image-2"})) == ("ok", None)
+    status, why = p.check(_ctx(config={"model": "gpt-image-9"}))
+    assert status == "error" and "gpt-image-9" in why and "List image models" in why
+    status, why = p.check(_ctx(http=_StubHttp(status=401)))
+    assert status == "error" and "rejected" in why
+
+
+def test_list_models_is_free_and_says_whether_the_configured_model_is_usable():
+    action = next(a for a in OpenAIImagesProvider.actions if a.key == "list_models")
+    assert action.cost_hint == "free" and not action.requires_approval
+    out = OpenAIImagesProvider().run_action("list_models", {}, _ctx(config={"model": "gpt-image-2"}))
+    assert out == {"models": ["dall-e-3", "gpt-image-1", "gpt-image-1-mini", "gpt-image-2"], "configured": "gpt-image-2", "available": True}
+    assert OpenAIImagesProvider().run_action("list_models", {}, _ctx(config={"model": "gpt-image-9"}))["available"] is False
+
+
+def test_generate_sends_quality_format_and_background_for_gpt_image_models():
+    http = _StubHttp()
+    OpenAIImagesProvider().run_action(
+        "generate",
+        {"prompt": "a lantern", "quality": "high", "output_format": "jpeg"},
+        _ctx(config={"model": "gpt-image-2", "quality": "low"}, http=http),
+    )
+    assert http.last["json"]["quality"] == "high" and http.last["json"]["output_format"] == "jpeg" and "background" not in http.last["json"]
+    http = _StubHttp()
+    OpenAIImagesProvider().run_action(
+        "generate",
+        {"prompt": "a lantern", "background": "transparent"},
+        _ctx(config={"model": "gpt-image-1-mini", "output_format": "webp"}, http=http),
+    )
+    assert (http.last["json"]["quality"], http.last["json"]["output_format"], http.last["json"]["background"]) == ("auto", "webp", "transparent")
+    http = _StubHttp()
+    OpenAIImagesProvider().run_action("generate", {"prompt": "a lantern", "quality": "high"}, _ctx(config={"model": "dall-e-3"}, http=http))
+    assert "quality" not in http.last["json"] and "output_format" not in http.last["json"]  # dall-e takes none of these
+    with pytest.raises(ValueError, match="transparent background needs png or webp"):
+        OpenAIImagesProvider().run_action(
+            "generate", {"prompt": "x", "background": "transparent", "output_format": "jpeg"}, _ctx(config={"model": "gpt-image-2"})
+        )
+    with pytest.raises(ValueError, match="quality must be one of"):
+        OpenAIImagesProvider().run_action("generate", {"prompt": "x", "quality": "ultra"}, _ctx(config={"model": "gpt-image-2"}))
+
+
+def test_the_guide_ships_and_names_the_models():
+    from marvin_integration_sdk import load_guide
+
+    guide = load_guide(OpenAIImagesProvider)
+    assert guide.startswith("# OpenAI Images") and "gpt-image-2" in guide and "gpt-image-1-mini" in guide and "List image models" in guide
 
 
 def test_generate_returns_canonical_output():
