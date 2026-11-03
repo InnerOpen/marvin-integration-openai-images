@@ -1,10 +1,11 @@
 """OpenAI images — a capability provider advertising `image.generate` and `image.edit`.
 
 * ``generate`` — in ``{prompt, count?}`` → out ``{images: [{image_b64}]}``.
-* ``edit`` — in ``{prompt, image_b64, image_mime?, background?, fidelity?}`` → out ``{image_b64}``: the picture changed
-  as the prompt says (its background removed, set in a new scene, a seasonal variant), keeping its details
-  (``input_fidelity: high``). Marvin fills ``image_b64`` from the workflow step's ``source`` and keeps the result as a
-  version of that picture.
+* ``edit`` — in ``{prompt, image_b64?, image_mime?, reference_images?, background?, fidelity?}`` → out ``{image_b64}``: the
+  picture changed as the prompt says (its background removed, set in a new scene, a seasonal variant), keeping its details
+  (``input_fidelity: high``, on the models that take it). Marvin fills ``image_b64`` from the workflow step's ``source`` and keeps
+  the result as a version of that picture; ``reference_images`` (the step's ``references``: up to 16 pictures in all, e.g.
+  a character's master and a style sheet) make a new picture that goes by them all.
 
 Pure with respect to Marvin — it gets the API key + config + http, and returns image bytes; Marvin persists them.
 """
@@ -25,10 +26,11 @@ from marvin_integration_sdk import (
 _ENDPOINT = "https://api.openai.com/v1/images/generations"
 _EDIT_ENDPOINT = "https://api.openai.com/v1/images/edits"
 _MODELS_ENDPOINT = "https://api.openai.com/v1/models"
-_DEFAULT_MODEL = "gpt-image-1"
+_DEFAULT_MODEL = "gpt-image-2"  # gpt-image-1 was shut down on 2026-10-23 (OpenAI SDK docs)
 _QUALITIES = ("auto", "low", "medium", "high")
 _FORMATS = ("png", "jpeg", "webp")
 _MAX_EDIT_BYTES = 50 * 1024 * 1024  # the edits API's limit per image
+_MAX_EDIT_IMAGES = 16  # …and how many pictures one edit can go by
 # Image generation is slow — set a generous timeout (the resolver caps wall-clock on its side).
 _TIMEOUT = 120
 
@@ -52,7 +54,7 @@ class OpenAIImagesProvider(IntegrationProvider):
                 "type": "string",
                 "title": "Model",
                 "default": _DEFAULT_MODEL,
-                "description": "gpt-image-2 for finals, gpt-image-1-mini for drafts.",
+                "description": "gpt-image-2 for finals, gpt-image-1-mini for drafts. (gpt-image-1 is retired.)",
             },
             "size": {
                 "type": "string",
@@ -121,7 +123,8 @@ class OpenAIImagesProvider(IntegrationProvider):
             key="edit",
             label="Edit an image",
             description="Change a picture as the prompt says — remove its background, set it in a new scene, make a seasonal "
-            "variant — keeping its details. The workflow step's source is the picture.",
+            "variant — keeping its details. The workflow step's source is the picture. With `references` (up to 16 more "
+            "pictures: a character's master, a style sheet) it makes a new picture that goes by them all, with or without a source.",
             capability="image.edit",
             input_schema={
                 "type": "object",
@@ -129,10 +132,18 @@ class OpenAIImagesProvider(IntegrationProvider):
                     "prompt": {"type": "string", "title": "What to change"},
                     "image_b64": {"type": "string", "title": "The picture (filled in from the step's source)"},
                     "image_mime": {"type": "string", "title": "Its type", "default": "image/png"},
+                    "reference_images": {
+                        "type": "array",
+                        "title": "More pictures to go by (filled in from the step's references)",
+                        "items": {
+                            "type": "object",
+                            "properties": {"image_b64": {"type": "string"}, "image_mime": {"type": "string"}, "name": {"type": "string"}},
+                        },
+                    },
                     "background": {"type": "string", "title": "Background", "enum": ["auto", "transparent", "opaque"], "default": "auto"},
                     "fidelity": {"type": "string", "title": "Keep the details", "enum": ["high", "low"], "default": "high"},
                 },
-                "required": ["prompt", "image_b64"],
+                "required": ["prompt"],
             },
             output_schema={"type": "object", "properties": {"image_b64": {"type": "string"}}},
             cost_hint="paid",
@@ -247,17 +258,12 @@ class OpenAIImagesProvider(IntegrationProvider):
         return {"models": models, "configured": configured, "available": configured in models}
 
     def _edit(self, args: dict, ctx: IntegrationContext) -> dict:
-        prompt, image_b64 = args.get("prompt"), args.get("image_b64")
+        prompt = args.get("prompt")
         if not prompt:
             raise ValueError("A 'prompt' is required.")
-        if not image_b64:
-            raise ValueError("No picture to edit: set the workflow step's source.")
-        try:
-            image = base64.b64decode(image_b64.split(",", 1)[-1] if image_b64.startswith("data:") else image_b64)
-        except ValueError as e:
-            raise ValueError("The picture isn't valid base64.") from e
-        if len(image) > _MAX_EDIT_BYTES:
-            raise ValueError("The picture is over 50 MB, the most the edits API takes.")
+        pictures = _pictures(args)
+        if not pictures:
+            raise ValueError("No picture to go by: set the workflow step's source or references.")
         cfg = ctx.config or {}
         model = self._model(ctx)
         background = args.get("background") or "auto"
@@ -266,12 +272,15 @@ class OpenAIImagesProvider(IntegrationProvider):
             "prompt": prompt,
             "size": cfg.get("size") or "1024x1024",
             "background": background,
-            "input_fidelity": args.get("fidelity") or "high",
             # A transparent background needs a format with alpha.
             "output_format": "png" if background == "transparent" else cfg.get("output_format") or "png",
         }
-        mime = args.get("image_mime") or "image/png"
-        body, content_type = _multipart(fields, ("image", f"image.{mime.split('/')[-1]}", mime, image))
+        if model.startswith("gpt-image-1.5"):  # only this one takes it high; gpt-image-2 refuses the field, 1-mini is always low
+            fields["input_fidelity"] = args.get("fidelity") or "high"
+        name = "image[]" if len(pictures) > 1 else "image"
+        body, content_type = _multipart(
+            fields, [(name, f"image-{i}.{mime.split('/')[-1]}", mime, data) for i, (data, mime) in enumerate(pictures, 1)]
+        )
         try:
             resp = ctx.http.post(
                 _EDIT_ENDPOINT, data=body, headers={"Authorization": f"Bearer {ctx.secret}", "Content-Type": content_type}, timeout=_TIMEOUT
@@ -298,15 +307,38 @@ class OpenAIImagesProvider(IntegrationProvider):
         }
 
 
-def _multipart(fields: dict, file: tuple[str, str, str, bytes]) -> tuple[bytes, str]:
-    """A multipart/form-data body (the edits endpoint takes the picture as a file) and its Content-Type."""
+def _pictures(args: dict) -> list[tuple[bytes, str]]:
+    """The pictures an edit goes by, as (bytes, mime): the step's source first, then its references. Each must be valid
+    base64 and under the API's size limit; at most `_MAX_EDIT_IMAGES` in all."""
+    given = []
+    if args.get("image_b64"):
+        given.append((args["image_b64"], args.get("image_mime")))
+    given += [(r.get("image_b64"), r.get("image_mime")) for r in args.get("reference_images") or [] if isinstance(r, dict) and r.get("image_b64")]
+    if len(given) > _MAX_EDIT_IMAGES:
+        raise ValueError(f"An edit goes by up to {_MAX_EDIT_IMAGES} pictures; this has {len(given)}.")
+    out = []
+    for raw, mime in given:
+        try:
+            data = base64.b64decode(raw.split(",", 1)[-1] if raw.startswith("data:") else raw, validate=True)
+        except ValueError as e:
+            raise ValueError("A picture isn't valid base64.") from e
+        if not data:
+            raise ValueError("A picture is empty.")
+        if len(data) > _MAX_EDIT_BYTES:
+            raise ValueError("A picture is over 50 MB, the most the edits API takes.")
+        out.append((data, mime or "image/png"))
+    return out
+
+
+def _multipart(fields: dict, files: list[tuple[str, str, str, bytes]]) -> tuple[bytes, str]:
+    """A multipart/form-data body (the edits endpoint takes each picture as a file part) and its Content-Type."""
     boundary = f"marvin-{uuid.uuid4().hex}"
     parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields.items()]
-    name, filename, mime, data = file
-    parts.append(
-        f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{filename}"\r\nContent-Type: {mime}\r\n\r\n'.encode()
-        + data
-        + b"\r\n"
-    )
+    for name, filename, mime, data in files:
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{filename}"\r\nContent-Type: {mime}\r\n\r\n'.encode()
+            + data
+            + b"\r\n"
+        )
     parts.append(f"--{boundary}--\r\n".encode())
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"

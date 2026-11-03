@@ -30,6 +30,10 @@ the cheap way to try a prompt; `high` is for the one you keep.
 - **Edit an image** (`edit`): `prompt`, the picture (filled in from the step's `source`), `background`
   (`auto` / `transparent` / `opaque`), `fidelity` (`high` keeps the details). Removes a background, sets the thing in
   a new scene, makes a seasonal variant. Returns one `image_b64`, kept as a version of the source.
+  **Keeping a character's look:** give the step `references: [<asset>, …]` (up to 16 pictures in all, with or without a
+  `source`) and the picture is made going by all of them: a character's master, a second character, a style sheet. The
+  prompt should say what each one is ("the first picture is the cook; keep his face and coat"). `fidelity` applies only
+  to `gpt-image-1.5`; `gpt-image-2` (the default) takes no such setting.
 - **List image models** (`list_models`): free. The image models this key can use, the connection's model, and
   whether it is one of them — the plain way to test the connection.
 

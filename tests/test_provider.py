@@ -147,7 +147,7 @@ def _edit(http, **args):
 def test_edit_is_an_image_edit_capability_that_needs_approval():
     action = next(a for a in OpenAIImagesProvider().actions if a.key == "edit")
     assert action.capability == "image.edit" and action.requires_approval is True and action.cost_hint == "paid"
-    assert action.input_schema["required"] == ["prompt", "image_b64"]
+    assert action.input_schema["required"] == ["prompt"]
 
 
 def test_edit_sends_the_picture_as_a_file_and_returns_one_image():
@@ -160,18 +160,68 @@ def test_edit_sends_the_picture_as_a_file_and_returns_one_image():
     content_type = http.last["headers"]["Content-Type"]
     assert content_type.startswith("multipart/form-data; boundary=")
     body = http.last["data"]
-    assert _PICTURE in body and b'name="image"; filename="image.png"' in body
+    assert _PICTURE in body and b'name="image"; filename="image-1.png"' in body
     for field, value in (
         ("prompt", b"Remove the background"),
         ("background", b"transparent"),
         ("output_format", b"png"),
-        ("input_fidelity", b"high"),
     ):
         assert f'name="{field}"\r\n\r\n'.encode() + value in body, field
+    assert b'name="input_fidelity"' not in body  # gpt-image-2 (the default) refuses the field
+
+
+def test_edit_sends_fidelity_only_to_the_model_that_takes_it():
+    http = _StubHttp()
+    OpenAIImagesProvider().run_action(
+        "edit",
+        {"prompt": "x", "image_b64": base64.b64encode(_PICTURE).decode()},
+        _ctx(config={"model": "gpt-image-1.5"}, http=http),
+    )
+    assert b'name="input_fidelity"\r\n\r\nhigh' in http.last["data"]
+
+
+def _picture_b64(tag: bytes) -> str:
+    return base64.b64encode(_PICTURE + tag).decode()
+
+
+def test_references_alone_are_sent_as_several_image_parts():
+    http = _StubHttp()
+    refs = [
+        {"image_b64": _picture_b64(b"cook"), "image_mime": "image/png", "name": "cook"},
+        {"image_b64": _picture_b64(b"captain"), "image_mime": "image/webp"},
+    ]
+
+    out = OpenAIImagesProvider().run_action("edit", {"prompt": "The two argue", "reference_images": refs}, _ctx(http=http))
+
+    body = http.last["data"]
+    assert out["image_b64"] == _FAKE_B64 and body.count(b'name="image[]"') == 2 and b'name="image"' not in body
+    assert body.index(_PICTURE + b"cook") < body.index(_PICTURE + b"captain")  # in the order given
+    assert b'filename="image-2.webp"' in body and b"Content-Type: image/webp" in body
+
+
+def test_the_source_goes_first_then_the_references():
+    http = _StubHttp()
+    OpenAIImagesProvider().run_action(
+        "edit",
+        {"prompt": "x", "image_b64": _picture_b64(b"deck"), "reference_images": [{"image_b64": _picture_b64(b"cook")}]},
+        _ctx(http=http),
+    )
+    body = http.last["data"]
+    assert body.count(b'name="image[]"') == 2 and body.index(_PICTURE + b"deck") < body.index(_PICTURE + b"cook")
+
+
+def test_more_than_sixteen_pictures_or_bad_base64_is_refused_before_any_request():
+    http = _StubHttp()
+    refs = [{"image_b64": _picture_b64(b"x")}] * 16
+    with pytest.raises(ValueError, match="up to 16 pictures; this has 17"):
+        OpenAIImagesProvider().run_action("edit", {"prompt": "x", "image_b64": _picture_b64(b"y"), "reference_images": refs}, _ctx(http=http))
+    with pytest.raises(ValueError, match="isn't valid base64"):
+        OpenAIImagesProvider().run_action("edit", {"prompt": "x", "reference_images": [{"image_b64": "!!!"}]}, _ctx(http=http))
+    assert http.last is None
 
 
 def test_edit_without_a_picture_or_with_an_error_says_so():
-    with pytest.raises(ValueError, match="set the workflow step's source"):
+    with pytest.raises(ValueError, match="source or references"):
         _edit(_StubHttp(), image_b64="")
     with pytest.raises(ValueError, match="HTTP 400"):
         _edit(_StubHttp(status=400, payload={"error": {"message": "bad"}}))

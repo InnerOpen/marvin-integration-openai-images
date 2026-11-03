@@ -20,7 +20,7 @@ resolves to it automatically.
 | | |
 |---|---|
 | **Credential** | `api_key` — an OpenAI key with image access |
-| **Config** | `model` (`gpt-image-1`; use `gpt-image-2` for finals, `gpt-image-1-mini` for drafts), `size` (the picture's pixels: `1024x1024`, `1536x1024`, `1024x1536`, `auto`), `quality` (`auto`/`low`/`medium`/`high`), `output_format` (`png`/`jpeg`/`webp`) |
+| **Config** | `model` (`gpt-image-2`; `gpt-image-1-mini` for drafts; `gpt-image-1` was retired on 2026-10-23), `size` (the picture's pixels: `1024x1024`, `1536x1024`, `1024x1536`, `auto`), `quality` (`auto`/`low`/`medium`/`high`), `output_format` (`png`/`jpeg`/`webp`) |
 | **Check connection** | real: the key is tried against OpenAI and the configured model must be one it can use |
 | **Action** | `generate` — `{ "prompt", "count": 1, "quality"?, "output_format"?, "background"? }` → `{ "images": [{ "image_b64" }], "usage" }` (paid, approval) |
 | **Action** | `edit` — `{ "prompt", "image_b64", "image_mime"?, "background"?, "fidelity"? }` → `{ "image_b64", "usage" }` (paid, approval) |
@@ -34,7 +34,7 @@ The guide (`guide.md`, SDK 0.9.0) tells Marvin's agents the models, the cost and
 |---|---|
 | **Capabilities** | `image.generate` (`generate`), `image.edit` (`edit`) |
 | **Credential** | `api_key` — an OpenAI API key |
-| **Config** | `model` (default `gpt-image-1`), `size` (default `1024x1024`) |
+| **Config** | `model` (default `gpt-image-2`), `size` (default `1024x1024`) |
 | **generate** | in `{prompt, count?}` → out `{images: [{image_b64 \| url}]}` |
 | **edit** | in `{prompt, image_b64, image_mime?, background? auto\|transparent\|opaque, fidelity? high\|low}` → out `{image_b64}`; the picture goes to `/v1/images/edits` as a file, with `input_fidelity` (default high) so its details stay; a transparent background comes back as PNG. In a Marvin workflow, the integration step's `source` fills `image_b64`, and the result is kept as a version of that picture. |
 | **Cost / approval** | both `cost_hint="paid"`, `requires_approval=True` |
