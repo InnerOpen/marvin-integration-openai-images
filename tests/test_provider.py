@@ -225,3 +225,19 @@ def test_edit_without_a_picture_or_with_an_error_says_so():
         _edit(_StubHttp(), image_b64="")
     with pytest.raises(ValueError, match="HTTP 400"):
         _edit(_StubHttp(status=400, payload={"error": {"message": "bad"}}))
+
+
+def test_a_steps_own_size_wins_over_the_connections_for_generate_and_edit_and_a_bad_one_is_refused():
+    http = _StubHttp()
+    OpenAIImagesProvider().run_action(
+        "generate", {"prompt": "a lantern", "size": "1536x1024"}, _ctx(config={"model": "gpt-image-2", "size": "1024x1536"}, http=http)
+    )
+    assert http.last["json"]["size"] == "1536x1024"  # this step's, not the connection's portrait
+    http = _StubHttp()
+    OpenAIImagesProvider().run_action("generate", {"prompt": "a lantern"}, _ctx(config={"model": "gpt-image-2", "size": "1024x1536"}, http=http))
+    assert http.last["json"]["size"] == "1024x1536"  # no size on the step: the connection's
+    http = _StubHttp()
+    OpenAIImagesProvider().run_action("generate", {"prompt": "x", "size": "AUTO"}, _ctx(config={"model": "gpt-image-2"}, http=http))
+    assert http.last["json"]["size"] == "auto"
+    with pytest.raises(ValueError, match="size must be like 1536x1024"):
+        OpenAIImagesProvider().run_action("generate", {"prompt": "x", "size": "huge"}, _ctx(config={"model": "gpt-image-2"}))

@@ -22,7 +22,7 @@ wheels = [
 
 [[package]]
 name = "marvin-integration-openai-images"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "marvin-integration-sdk" },

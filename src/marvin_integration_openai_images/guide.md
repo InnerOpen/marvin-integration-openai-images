@@ -23,11 +23,12 @@ the cheap way to try a prompt; `high` is for the one you keep.
 
 ## Actions
 
-- **Generate image** (`generate`): `prompt` (required), `count` (default 1), and optionally `quality`,
+- **Generate image** (`generate`): `prompt` (required), `count` (default 1), and optionally `size` (this step's own, e.g. `1536x1024` for a
+  landscape picture; the connection's size is the default), `quality`,
   `output_format`, `background` (`transparent` needs png or webp). Returns `images: [{image_b64}]` plus `usage`.
   In a workflow Marvin keeps each picture as an asset (prompt, model and run recorded) and the step's output carries
   the asset's id and url; `attach_as` links it to the run's entry in that role.
-- **Edit an image** (`edit`): `prompt`, the picture (filled in from the step's `source`), `background`
+- **Edit an image** (`edit`): `prompt`, the picture (filled in from the step's `source`), `size` (as for `generate`), `background`
   (`auto` / `transparent` / `opaque`), `fidelity` (`high` keeps the details). Removes a background, sets the thing in
   a new scene, makes a seasonal variant. Returns one `image_b64`, kept as a version of the source.
   **Keeping a character's look:** give the step `references: [<asset>, …]` (up to 16 pictures in all, with or without a

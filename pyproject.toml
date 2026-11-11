@@ -1,6 +1,6 @@
 [project]
 name = "marvin-integration-openai-images"
-version = "0.5.0"
+version = "0.6.0"
 description = "OpenAI image generation for Marvin — advertises the image.generate capability."
 readme = "README.md"
 requires-python = ">=3.11"
