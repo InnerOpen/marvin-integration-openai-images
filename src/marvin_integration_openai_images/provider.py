@@ -11,6 +11,7 @@ Pure with respect to Marvin — it gets the API key + config + http, and returns
 """
 
 import base64
+import re
 import uuid
 from typing import ClassVar
 
@@ -28,6 +29,17 @@ _EDIT_ENDPOINT = "https://api.openai.com/v1/images/edits"
 _MODELS_ENDPOINT = "https://api.openai.com/v1/models"
 _DEFAULT_MODEL = "gpt-image-2"  # gpt-image-1 was shut down on 2026-10-23 (OpenAI SDK docs)
 _QUALITIES = ("auto", "low", "medium", "high")
+_SIZE = re.compile(r"^\d{3,4}x\d{3,4}$")
+
+
+def _size(args: dict, cfg: dict) -> str:
+    """The picture's size: the step's own `size` (1536x1024 for a landscape sheet), else the connection's, else square. `auto` lets the model choose."""
+    size = str((args or {}).get("size") or cfg.get("size") or "1024x1024").strip().lower()
+    if size != "auto" and not _SIZE.match(size):
+        raise ValueError("size must be like 1536x1024 (width x height in pixels) or auto")
+    return size
+
+
 _FORMATS = ("png", "jpeg", "webp")
 _MAX_EDIT_BYTES = 50 * 1024 * 1024  # the edits API's limit per image
 _MAX_EDIT_IMAGES = 16  # …and how many pictures one edit can go by
@@ -90,6 +102,11 @@ class OpenAIImagesProvider(IntegrationProvider):
                 "properties": {
                     "prompt": {"type": "string", "title": "Prompt"},
                     "count": {"type": "integer", "title": "Count", "default": 1},
+                    "size": {
+                        "type": "string",
+                        "title": "Size (pixels)",
+                        "description": "This step's own size, e.g. 1536x1024 (landscape), 1024x1536 (portrait), 1024x1024 or auto; default from the connection.",
+                    },
                     "quality": {
                         "type": "string",
                         "title": "Quality",
@@ -130,6 +147,11 @@ class OpenAIImagesProvider(IntegrationProvider):
                 "type": "object",
                 "properties": {
                     "prompt": {"type": "string", "title": "What to change"},
+                    "size": {
+                        "type": "string",
+                        "title": "Size (pixels)",
+                        "description": "This step's own size, e.g. 1536x1024 (landscape), 1024x1536 (portrait), 1024x1024 or auto; default from the connection.",
+                    },
                     "image_b64": {"type": "string", "title": "The picture (filled in from the step's source)"},
                     "image_mime": {"type": "string", "title": "Its type", "default": "image/png"},
                     "reference_images": {
@@ -206,7 +228,7 @@ class OpenAIImagesProvider(IntegrationProvider):
         model = self._model(ctx)
         # No response_format: newer image endpoints reject it. gpt-image-1 returns b64_json;
         # dall-e-* return a URL. run_action normalizes both below.
-        body = {"model": model, "prompt": prompt, "n": int((args or {}).get("count") or 1), "size": cfg.get("size") or "1024x1024"}
+        body = {"model": model, "prompt": prompt, "n": int((args or {}).get("count") or 1), "size": _size(args, cfg)}
         if model.startswith("gpt-image"):  # the gpt-image models take these; dall-e-* don't
             quality = (args or {}).get("quality") or cfg.get("quality") or "auto"
             fmt = (args or {}).get("output_format") or cfg.get("output_format") or "png"
@@ -270,7 +292,7 @@ class OpenAIImagesProvider(IntegrationProvider):
         fields = {
             "model": model,
             "prompt": prompt,
-            "size": cfg.get("size") or "1024x1024",
+            "size": _size(args, cfg),
             "background": background,
             # A transparent background needs a format with alpha.
             "output_format": "png" if background == "transparent" else cfg.get("output_format") or "png",
